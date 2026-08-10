@@ -300,7 +300,9 @@ class Controller:
 
     def configure_resistance(self, profile: ResistanceProfile) -> Frame:
         pounds = profile.base_tenths_lb / 10.0
+        peak_pounds = profile.peak_tenths_lb / 10.0
         self.safety.validate_resistance(pounds)
+        self.safety.validate_resistance(peak_pounds)
         self.require_compatible_firmware()
         frame = self.send_raw(MessageType.RESISTANCE_PROFILE, profile.encode(), destination=1)
         self.configured_profile = profile

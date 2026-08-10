@@ -6,6 +6,8 @@ from swolectl.messages import (
     DeviceAnnouncement,
     MessageType,
     MotorTelemetry,
+    ResistanceMode,
+    ResistanceProfile,
     ResistanceState,
 )
 from swolectl.transport import MemoryTransport
@@ -45,6 +47,22 @@ def test_resistance_bounds() -> None:
     try:
         with pytest.raises(SafetyError, match="outside"):
             controller.set_resistance(25)
+    finally:
+        controller.close()
+
+
+def test_resistance_bounds_include_mode_modifier() -> None:
+    controller, transport = make_controller(
+        SafetyPolicy(allow_motor_commands=True, maximum_resistance_lb=200)
+    )
+    try:
+        mark_supported(controller)
+        profile = ResistanceProfile.for_mode(
+            150, ResistanceMode.CHAINS, intensity_percent=50
+        )
+        with pytest.raises(SafetyError, match=r"225\.0 lb is outside"):
+            controller.configure_resistance(profile)
+        assert transport.writes == []
     finally:
         controller.close()
 

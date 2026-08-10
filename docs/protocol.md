@@ -203,16 +203,16 @@ The payload is twelve 16-bit words:
 | Offset | Default | Meaning/confidence |
 | ---: | ---: | --- |
 | `0x00` | variable | Base resistance in 0.1 lb, verified from 5–20 lb sweep |
-| `0x02` | 0 | Modifier; varied during Eccentric experiment, inferred |
-| `0x04` | 0 | Modifier; varied during Chains/Smart Flex experiments, inferred |
+| `0x02` | 0 | Eccentric added weight in 0.1 lb |
+| `0x04` | 0 | ROM/Chains/Smart Flex weight in 0.1 lb |
 | `0x06` | 0 / 8000 | Drop-set speed threshold when auto-spotter mode is 4 |
 | `0x08` | 0 / 800 | Drop-set reduction percentage when auto-spotter mode is 4 |
 | `0x0a` | 0 | Unknown |
-| `0x0c` | 10 | Unknown constant |
-| `0x0e` | 0 | Packed control/auto-spotter flags; known values include `0x04`, `0x40`, `0x80` |
+| `0x0c` | 10 | Control mode; 10 is normal weight mode |
+| `0x0e` | 0 | ROM mode in bits 0–4 and auto-spotter mode in bits 5–7 |
 | `0x10` | 0 | Unknown |
-| `0x12` | 2 | Unknown mode/target value |
-| `0x14` | 20 | Unknown constant |
+| `0x12` | 2 | Motor location; 2 is virtual differential/bilateral |
+| `0x14` | 20 | Frequency in 0.1 Hz; 20 is 2.0 Hz |
 | `0x16` | 0 | Unknown |
 
 Basic 5 lb profile:
@@ -235,13 +235,30 @@ behavior has not yet been verified during a complete exercise.
 | Basic | 0 | 0 | `0x0000` |
 | Spotter | 0 | 0 | `0x0040` |
 | Drop Set | 0 | 0 | `0x0080` |
-| Chains level 1 / 2 | 0 | 10 / 30 | `0x0000` |
-| Eccentric level 1 / 2 | 10 / 20 | 0 | `0x0000` |
-| Smart Flex | 0 | 10 | `0x0004` |
+| Chains | 0 | 0–100% of base | `0x0000` |
+| Eccentric | 0–60% of base | 0 | `0x0000` |
+| Smart Flex | 0 | 0–60% of base | `0x0004` |
 
-The UI displays the modifier words as tentative load deltas in 0.1 lb units.
-That presentation is inferred and must not be confused with the verified base
-weight scaling.
+The UI defaults each adjustable mode to 25% and converts the result to the
+nearest 0.1 lb. It rejects profiles whose peak base-plus-modifier load exceeds
+the configured safety limit.
+
+The ROM mode values defined by this protocol family are:
+
+| Value | Curve |
+| ---: | --- |
+| 0 | Chains |
+| 1 | Bell with eccentric |
+| 2 | Reverse chains with eccentric |
+| 3 | Chains with eccentric |
+| 4 | Flat with eccentric (Smart Flex mapping) |
+| 5 | Quadratic ascending with eccentric |
+| 6 | Perturbation |
+| 7 | Reverse chains |
+| 8 | Eccentric reduction |
+
+Only modes exposed by the normal web panel have established safety bounds.
+Modes 1–3 and 5–8 remain unavailable through typed controls.
 
 ### Drop sets
 

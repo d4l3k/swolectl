@@ -174,9 +174,9 @@ it.
 The mode picker includes Basic, Spotter, Drop Sets, Chains, Eccentric, and Smart
 Flex. Drop Sets use the controller's stock threshold and 8% reduction defaults;
 the controller performs each reduction without additional host commands.
-Only base resistance units are verified. Advanced mode names and levels are
-high-confidence inferences from isolated UI toggles and are labeled accordingly.
-Profiles apply automatically after weight, mode, or level changes. The live
+Mode intensity is expressed as a percentage of base resistance: Chains supports
+0–100%, while Eccentric and Smart Flex support 0–60%; all default to 25%.
+Profiles apply automatically after weight, mode, or intensity changes. The live
 exercise graph records resistance immediately and is ready for draw and watt
 series once those telemetry fields are established.
 

@@ -26,7 +26,7 @@ STATIC_DIR = Path(__file__).with_name("static")
 class ProfileRequest(BaseModel):
     pounds: float = Field(ge=5.0, le=200.0)
     mode: ResistanceMode = ResistanceMode.BASIC
-    level: int = Field(default=1, ge=1, le=2)
+    intensity_percent: float = Field(default=25.0, ge=0.0, le=100.0)
 
 
 class MotorService:
@@ -187,7 +187,7 @@ class MotorService:
             profile = ResistanceProfile.for_mode(
                 request.pounds,
                 request.mode,
-                level=request.level,
+                intensity_percent=request.intensity_percent,
             )
             self.controller.configure_resistance(profile)
 

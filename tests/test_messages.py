@@ -104,30 +104,36 @@ def test_electrical_telemetry() -> None:
 
 
 @pytest.mark.parametrize(
-    ("mode", "level", "modifier_02", "modifier_04", "flags"),
+    ("mode", "intensity", "modifier_02", "modifier_04", "flags"),
     [
-        (ResistanceMode.BASIC, 1, 0, 0, 0),
-        (ResistanceMode.SPOTTER, 1, 0, 0, 0x40),
-        (ResistanceMode.DROP_SET, 1, 0, 0, 0x80),
-        (ResistanceMode.CHAINS, 1, 0, 10, 0),
-        (ResistanceMode.CHAINS, 2, 0, 30, 0),
-        (ResistanceMode.ECCENTRIC, 1, 10, 0, 0),
-        (ResistanceMode.ECCENTRIC, 2, 20, 0, 0),
-        (ResistanceMode.SMART_FLEX, 1, 0, 10, 4),
+        (ResistanceMode.BASIC, 25, 0, 0, 0),
+        (ResistanceMode.SPOTTER, 25, 0, 0, 0x40),
+        (ResistanceMode.DROP_SET, 25, 0, 0, 0x80),
+        (ResistanceMode.CHAINS, 20, 0, 10, 0),
+        (ResistanceMode.CHAINS, 60, 0, 30, 0),
+        (ResistanceMode.ECCENTRIC, 20, 10, 0, 0),
+        (ResistanceMode.ECCENTRIC, 40, 20, 0, 0),
+        (ResistanceMode.SMART_FLEX, 25, 0, 13, 4),
     ],
 )
 def test_resistance_modes(
     mode: ResistanceMode,
-    level: int,
+    intensity: float,
     modifier_02: int,
     modifier_04: int,
     flags: int,
 ) -> None:
-    profile = ResistanceProfile.for_mode(5, mode, level=level)
+    profile = ResistanceProfile.for_mode(5, mode, intensity_percent=intensity)
     assert profile.base_tenths_lb == 50
     assert profile.modifier_02 == modifier_02
     assert profile.modifier_04 == modifier_04
     assert profile.flags == flags
+
+
+def test_mode_intensity_limits() -> None:
+    ResistanceProfile.for_mode(5, ResistanceMode.CHAINS, intensity_percent=100)
+    with pytest.raises(ValueError, match="eccentric intensity"):
+        ResistanceProfile.for_mode(5, ResistanceMode.ECCENTRIC, intensity_percent=61)
 
 
 def test_drop_set_profile_uses_controller_defaults() -> None:

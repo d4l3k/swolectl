@@ -82,12 +82,13 @@ class ResistanceProfile:
         pounds: float,
         mode: ResistanceMode,
         *,
-        level: int = 1,
+        intensity_percent: float = 25.0,
     ) -> ResistanceProfile:
         """Build one of the known advanced-mode profiles.
 
-        Advanced semantics are inferred. ``level`` is accepted only where two
-        distinct modifier values are defined.
+        ``intensity_percent`` is converted to an added load relative to the
+        base resistance. Chains supports 0-100%; Eccentric and Smart Flex
+        support 0-60%.
         """
         base = cls.basic(pounds).base_tenths_lb
         if mode is ResistanceMode.BASIC:
@@ -101,15 +102,24 @@ class ResistanceProfile:
                 unknown_08=800,
                 flags=0x0080,
             )
-        if level not in (1, 2):
-            raise ValueError("mode level must be 1 or 2")
+        if not math.isfinite(intensity_percent):
+            raise ValueError("mode intensity must be finite")
+        maximum = 100.0 if mode is ResistanceMode.CHAINS else 60.0
+        if not 0.0 <= intensity_percent <= maximum:
+            raise ValueError(f"{mode.value} intensity must be between 0 and {maximum:g}%")
+        modifier = math.floor(base * intensity_percent / 100.0 + 0.5)
         if mode is ResistanceMode.CHAINS:
-            return cls(base_tenths_lb=base, modifier_04=10 if level == 1 else 30)
+            return cls(base_tenths_lb=base, modifier_04=modifier)
         if mode is ResistanceMode.ECCENTRIC:
-            return cls(base_tenths_lb=base, modifier_02=10 if level == 1 else 20)
+            return cls(base_tenths_lb=base, modifier_02=modifier)
         if mode is ResistanceMode.SMART_FLEX:
-            return cls(base_tenths_lb=base, modifier_04=10, flags=0x0004)
+            return cls(base_tenths_lb=base, modifier_04=modifier, flags=0x0004)
         raise ValueError(f"unsupported resistance mode: {mode}")
+
+    @property
+    def peak_tenths_lb(self) -> int:
+        """Maximum configured load implied by the base and modifier fields."""
+        return self.base_tenths_lb + self.modifier_02 + self.modifier_04
 
     def encode(self) -> bytes:
         values = (

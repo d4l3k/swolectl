@@ -60,7 +60,7 @@
       <div class="weight"><input id="weight" type="number" min="5" max="200" step="1" value="5"><span class="unit">lb</span></div>
       <input id="weightRange" type="range" min="5" max="200" step="1" value="5">
       <div id="modes" class="modes"></div>
-      <div class="level"><select id="level"><option value="1">Level 1</option><option value="2">Level 2</option></select></div>
+      <div id="intensityControl" class="level" hidden><label for="intensity">Mode intensity: <strong id="intensityValue">25%</strong></label><input id="intensity" type="range" min="0" max="60" step="1" value="25"></div>
       <div id="delta" class="delta">Base load: 5.0 lb</div>
       <div class="actions"><button id="toggle" class="toggle">ENABLE RESISTANCE</button></div>
       <div id="message"></div>
@@ -100,22 +100,21 @@ const modeData=[
   ['basic','Basic','Verified base resistance'],
   ['spotter','Spotter','Inferred · flag 0x0040'],
   ['drop_set','Drop Sets','Controller-managed · 8% reductions'],
-  ['chains','Chains','Inferred · two levels'],
-  ['eccentric','Eccentric','Inferred · two levels'],
-  ['smart_flex','Smart Flex','Inferred · profile mapping']
+  ['chains','Chains','0–100% added load'],
+  ['eccentric','Eccentric','0–60% added load'],
+  ['smart_flex','Smart Flex','0–60% ROM load']
 ];
 let selected='basic';
 let enabled=false, previousEnabled=false, applyTimer=null, samples=[], exerciseStart=null, exerciseEnd=null, baselineLeft=0, baselineRight=0, maxWatts=0;
 const $=id=>document.getElementById(id);
 const modes=$('modes');
-modeData.forEach(([id,name,note])=>{const b=document.createElement('button');b.className='mode'+(id==='basic'?' selected':'');b.innerHTML=`<strong>${name}</strong><small>${note}</small>`;b.onclick=()=>{selected=id;document.querySelectorAll('.mode').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');$('level').disabled=!['chains','eccentric'].includes(id);profileChanged()};modes.appendChild(b)});
-$('level').disabled=true;
+modeData.forEach(([id,name,note])=>{const b=document.createElement('button');b.className='mode'+(id==='basic'?' selected':'');b.innerHTML=`<strong>${name}</strong><small>${note}</small>`;b.onclick=()=>{selected=id;document.querySelectorAll('.mode').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');const adjustable=['chains','eccentric','smart_flex'].includes(id);$('intensityControl').hidden=!adjustable;if(adjustable)$('intensity').max=id==='chains'?100:60;profileChanged()};modes.appendChild(b)});
 $('weight').oninput=()=>{$('weightRange').value=$('weight').value;profileChanged()};
 $('weightRange').oninput=()=>{$('weight').value=$('weightRange').value;profileChanged()};
-$('level').onchange=profileChanged;
-function deltaValue(){if(selected==='chains')return Number($('level').value)===1?1:3;if(selected==='eccentric')return Number($('level').value)===1?1:2;if(selected==='smart_flex')return 1;return 0}
-function profileChanged(){const base=Number($('weight').value),delta=deltaValue();$('delta').textContent=delta?`Base ${base.toFixed(1)} lb + mode delta ${delta.toFixed(1)} lb = ${(base+delta).toFixed(1)} lb`:`Base load: ${base.toFixed(1)} lb`;clearTimeout(applyTimer);applyTimer=setTimeout(applyProfile,350)}
-function applyProfile(){return api('profile',{pounds:Number($('weight').value),mode:selected,level:Number($('level').value)})}
+$('intensity').oninput=()=>{$('intensityValue').textContent=$('intensity').value+'%';profileChanged()};
+function deltaValue(){return ['chains','eccentric','smart_flex'].includes(selected)?Number($('weight').value)*Number($('intensity').value)/100:0}
+function profileChanged(){const base=Number($('weight').value),delta=deltaValue(),peak=base+delta;$('delta').textContent=peak>200?`Peak ${peak.toFixed(1)} lb exceeds the 200 lb limit`:(delta?`Base ${base.toFixed(1)} lb + ${$('intensity').value}% (${delta.toFixed(1)} lb) = ${peak.toFixed(1)} lb peak`:`Base load: ${base.toFixed(1)} lb`);clearTimeout(applyTimer);if(peak<=200)applyTimer=setTimeout(applyProfile,350)}
+function applyProfile(){return api('profile',{pounds:Number($('weight').value),mode:selected,intensity_percent:Number($('intensity').value)})}
 async function api(path,body){$('message').textContent='';try{const response=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:body===null?null:body===undefined?undefined:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.detail||response.statusText);render(data);return data}catch(error){$('message').textContent=error.message;throw error}}
 function lb(value){return value==null?'—':Number(value).toFixed(1)+' lb'}
 function render(data){const c=$('connection');c.classList.toggle('connected',data.connected);const fw=data.firmware_version??(data.firmware_session==='already_active'?'active session':'unknown');c.querySelector('span').textContent=data.sleeping?'Sleeping':data.connected?`Connected · FW ${fw}`:'Disconnected';$('configured').textContent=lb(data.configured_lb);$('volume').textContent=lb(data.session_volume_lb);const t=data.telemetry||{},arms=data.arms||{};$('reps').textContent=t.rep_count??0;enabled=data.connected?(t.device_enabled??data.commanded_enabled):false;$('state').textContent=enabled?'ENABLED':'DISABLED';const toggle=$('toggle');toggle.disabled=!data.connected;toggle.classList.toggle('on',enabled);toggle.textContent=enabled?'DISABLE RESISTANCE':'ENABLE RESISTANCE';$('applied').textContent=lb(t.applied_lb);$('base').textContent=lb(t.base_lb);$('active').textContent=enabled?'ACTIVE':'INACTIVE';$('cables').textContent=t.left_position==null?'— / —':`${t.left_position.toFixed(1)} / ${t.right_position.toFixed(1)}`;const value=v=>v==null?'—':v;const armText=a=>a==null?'— / — / —':`${value(a.height)} / ${value(a.angle)} / ${value(a.rotation)}${a.fully_locked?' 🔒':''}`;$('leftArm').textContent=armText(arms.left);$('rightArm').textContent=armText(arms.right);$('cableWarning').classList.toggle('show',t.cable_mismatch===true);const remaining=Math.max(0,(data.sleep_timeout_seconds??0)-(data.idle_seconds??0));$('sleepStatus').textContent=data.sleep_timeout_seconds>0?(data.sleeping?'USB released for sleep':`Auto-sleep in ${Math.ceil(remaining/60)} min`):'Auto-sleep disabled';if(data.error)$('message').textContent=data.error;if(data.telemetry){const now=Date.now();if(enabled&&!previousEnabled){samples=[];exerciseStart=now;exerciseEnd=null;baselineLeft=t.left_position;baselineRight=t.right_position;maxWatts=0;$('maxWatts').textContent='—'}if(enabled){const watts=t.power_watts==null?null:Math.abs(t.power_watts);samples.push({time:now,leftDraw:Math.abs(t.left_position-baselineLeft),rightDraw:Math.abs(t.right_position-baselineRight),watts});if(watts!=null){maxWatts=Math.max(maxWatts,watts);$('maxWatts').textContent=Math.round(maxWatts)+' W'}$('powerSource').textContent=t.power_source==='electrical_telemetry'?'Dedicated electrical telemetry':'Power telemetry unavailable';exerciseEnd=now;drawGraphs()}previousEnabled=enabled}}
