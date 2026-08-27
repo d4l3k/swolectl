@@ -25,6 +25,10 @@ Tonal motor-controller hardware over USB CDC ACM.
 This project is not affiliated with, endorsed by, or supported by Tonal. The
 Tonal name is used only to identify hardware compatibility.
 
+## Full setup
+
+<img width="2814" height="1710" alt="Full swolectl hardware setup" src="https://github.com/user-attachments/assets/3ee100c5-727d-4ed9-8481-3d245dd33f1f" />
+
 ## Features
 
 - USB serial transport at raw 115200 8N1
