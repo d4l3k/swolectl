@@ -25,30 +25,7 @@ Tonal motor-controller hardware over USB CDC ACM.
 This project is not affiliated with, endorsed by, or supported by Tonal. The
 Tonal name is used only to identify hardware compatibility.
 
-## Photos
-
-<img width="2814" height="1710" alt="20260810_00h06m44s_grim" src="https://github.com/user-attachments/assets/3ee100c5-727d-4ed9-8481-3d245dd33f1f" />
-
-<img width="1323" height="1757" alt="image" src="https://github.com/user-attachments/assets/6aa2d68b-1b7b-4ab2-a4f6-dee7df2b6217" />
-
-
-## Connecting to Motor Controller
-
-To open the Tonal unit there are 4 security hex screws on the right side of the unit hidden by the arm. Rotating it to the forward position with the arm extended is the easiest way to access them.
-
-It is strongly recommended to power off your unit before doing anything to it.
-
-The Android computer on the back of the screen  has a white 5-pin connector "tablet" on the bottom right. This connector exposes USB as well as a wake signal to the Android computer. You can disconnect that connector and use a USB connector instead. It's also recommended to unplug the "tablet power" connector.
-
-<img width="605" height="1116" alt="image" src="https://github.com/user-attachments/assets/19e024d5-860e-46b0-b76f-626fd4cd5a41" />
-
-<img width="1135" height="937" alt="tonal-android-connectors" src="https://github.com/user-attachments/assets/25390399-d84d-47d1-8ef1-7d4b95a7df0f" />
-
-
-
-## Current status
-
-Implemented:
+## Features
 
 - USB serial transport at raw 115200 8N1
 - 16-byte wire header and CRC-16/BUYPASS
@@ -58,17 +35,7 @@ Implemented:
 - Basic resistance profile and enable/disable commands
 - Signed load contributions, cable channels, rep count, and enable feedback
 - Receive-only diagnostics
-- Local web control panel with live telemetry and emergency disable
 - Explicit motor-command opt-in and resistance bounds
-
-Not yet established:
-
-- Electrical-telemetry subscription/routing during abbreviated bring-up
-- Complete symbolic names for bring-up messages
-- Every advanced mode and firmware variant
-
-The public telemetry model exposes cable distance and watts as `None` until
-controlled experiments prove their encoding. See [the protocol document](docs/protocol.md).
 
 ## Hardware
 
@@ -112,13 +79,6 @@ The controller reports itself as self-powered. USB VBUS still acts as host
 presence and can trigger controller initialization or arm movement. Do not
 connect or disconnect it with anyone near the mechanism.
 
-> [!WARNING]
-> Do not leave USB connected while switching on the machine. On the tested
-> hardware, connecting USB before machine power can prevent normal controller
-> startup. Power on the machine first, wait for it to initialize, and only then
-> connect USB. If it starts with USB already attached, disconnect USB and fully
-> power-cycle the machine before trying again.
-
 ## Install and test
 
 ```bash
@@ -128,57 +88,14 @@ uv run ruff check .
 uv run mypy
 ```
 
-Start the controller with the standard 200 lb ceiling, no workout-duration
-limit, and a 10-minute inactivity sleep timer:
+Inspect received frames for five seconds:
 
 ```bash
-uv run swolectl --port /dev/ttyACM0
+uv run swolectl --port /dev/ttyACM0 --seconds 5
 ```
 
-The controller runs until stopped. `--max-resistance` can impose a lower ceiling,
-and `--sleep-timeout 0` disables inactivity sleep. To use another idle interval,
-pass seconds such as `--sleep-timeout 900`.
-
-Receive-only inspection remains available separately:
-
-```bash
-uv run swolectl-diagnose --port /dev/ttyACM0 --seconds 5
-```
-
-`swolectl` starts the normal controller and local web interface.
-
-Then open <http://127.0.0.1:8080>. To expose it on a trusted LAN, add
-`--host 0.0.0.0`. The web app has no authentication; never expose it to an
-untrusted network or the public internet. The server attempts to disable
-resistance during normal shutdown, but this does not replace a physical power
-disconnect.
-
-### USB sleep setup
-
-Sleep is implemented by disabling resistance, closing `/dev/ttyACM*`, and
-allowing Linux to runtime-suspend the USB device. Install the included udev rule
-once so the kernel is allowed to suspend this controller:
-
-```bash
-sudo install -m 0644 contrib/99-swolectl.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules
-```
-
-Apply the rule on the next safe USB reconnect. Remember the required startup
-order above: power the machine first and connect USB only after initialization.
-The Sleep button and inactivity timer release USB; Reconnect / wake reopens the
-port and resumes it. Without the udev rule, resistance is still disabled and the
-port is closed, but the host may keep the USB link active instead of suspending
-it.
-
-The mode picker includes Basic, Spotter, Drop Sets, Chains, Eccentric, and Smart
-Flex. Drop Sets use the controller's stock threshold and 8% reduction defaults;
-the controller performs each reduction without additional host commands.
-Mode intensity is expressed as a percentage of base resistance: Chains supports
-0–100%, while Eccentric and Smart Flex support 0–60%; all default to 25%.
-Profiles apply automatically after weight, mode, or intensity changes. The live
-exercise graph records resistance immediately and is ready for draw and watt
-series once those telemetry fields are established.
+The CLI is receive-only. Force-producing operations are available through the
+Python API and require an explicit `SafetyPolicy`.
 
 ## Python usage
 

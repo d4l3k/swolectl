@@ -10,9 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.116",
   "pyserial>=3.5",
-  "uvicorn>=0.35",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -31,8 +29,7 @@ dev = [
 ]
 
 [project.scripts]
-swolectl = "swolectl.web:main"
-swolectl-diagnose = "swolectl.cli:main"
+swolectl = "swolectl.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/swolectl"]
