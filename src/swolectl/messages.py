@@ -12,7 +12,6 @@ class MessageType(IntEnum):
     BOOT_0 = 0x0000
     BOOT_1 = 0x0001
     BOOT_2 = 0x0002
-    ENTER_ACTIVE = 0x0003
     RESISTANCE_PROFILE = 0x0013
     DEVICE_ANNOUNCE = 0x1000
     STATUS = 0x1001

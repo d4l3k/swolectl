@@ -1,6 +1,6 @@
 # Serial protocol specification
 
-Last reviewed against the implementation: 2026-08-10.
+Last reviewed against the implementation: 2026-09-23.
 
 This document describes the serial protocol. Confidence labels mean:
 
@@ -61,7 +61,7 @@ closed, and the USB device enters runtime suspend. Opening the port resumes the
 device. Linux may require the supplied udev rule to set the USB device's
 `power/control` to `auto`; many systems default it to `on`.
 
-Do not substitute `ENTER_ACTIVE` (`0x0003`) for wake. That message is not part of
+Do not substitute type `0x0003` for wake. That message is not part of
 the validated wake path and previously coincided with a controller fault.
 
 ## Frame layout
@@ -130,8 +130,10 @@ Telemetry is interleaved with negotiation. `Controller.bring_up()` implements
 the prefix and declares success only after `0x1024` telemetry arrives.
 If telemetry is already streaming, it recognizes the existing paired state and
 does not restart negotiation. Because the pre-active firmware announcement has
-already passed in that state, the compatibility guard records the session as
-`already-active`; it does not claim to have read a firmware version from normal
+already passed in that state, the firmware version is unknown and the
+compatibility guard fails closed: motor commands are refused unless
+`SafetyPolicy.allow_unverified_firmware` is set, in which case the session is
+recorded as `already-active`. No firmware version is read from normal
 telemetry. Bring-up is experimental and may stop with `BringUpError` on other
 firmware.
 
@@ -142,6 +144,7 @@ firmware.
 | `0x0000` | host -> device | 0 | Bring-up step, symbolic meaning unknown |
 | `0x0001` | host -> device | 0 | Bring-up step, symbolic meaning unknown |
 | `0x0002` | host -> device | 0 | Bring-up step, symbolic meaning unknown |
+| `0x0003` | host -> device | 0 | Believed active-state transition; do not send (see below) |
 | `0x0013` | host -> device | 24 | Resistance profile, verified |
 | `0x1000` | device -> host | 66 | Unpaired device announcement, verified |
 | `0x1001` | device -> host | 4 | Connection/status state, inferred |
@@ -163,6 +166,11 @@ firmware.
 
 Unknown messages can be represented by `Frame` and sent through `send_raw`,
 but the library intentionally does not invent typed commands for them.
+`send_raw` enforces `SafetyPolicy` for force-producing types: `0x0013`,
+`0x1028`, and `0x0003` require `allow_motor_commands`; `0x0013` payloads must
+decode as a profile within the resistance bounds and pass the firmware check;
+and a `0x1028` enable requires a configured profile and the firmware check.
+Bring-up and diagnostic types are not gated.
 
 The replacement web UI reports power only if the candidate dedicated electrical
 stream is received. An earlier experiment multiplying `0x1024` motor tension by
@@ -355,7 +363,8 @@ remain under investigation.
 Type `0x0003` is believed to be an active-state transition, but sending it to
 an already paired/active controller coincided with a fast-blinking red fault,
 fan shutdown, and loss of standby resistance. It is excluded from automatic
-bring-up and must not be sent without a verified state precondition.
+bring-up, has no typed API, and must not be sent without a verified state
+precondition. No such precondition is currently known.
 
 ## Safety requirements
 

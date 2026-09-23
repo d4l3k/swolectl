@@ -62,12 +62,18 @@ differs.
 The controller reports this version in its unsolicited startup announcement.
 The library decodes it and, by default, refuses force-producing commands unless
 the reported version is in `SafetyPolicy.compatible_firmware_versions`. Missing
-or different versions fail closed during a cold bring-up. If valid high-rate
-motor telemetry is already streaming when the library connects, the controller
-is treated as an already-negotiated active session even though its one-time
-version announcement was missed. Expert users can explicitly set
-`allow_unverified_firmware=True`, accepting that protocol and safety behavior may
-differ. Emergency disable remains available without a version match.
+or different versions fail closed. The version is only announced before
+bring-up, so if motor telemetry is already streaming when the library connects,
+the version is unknown and motor commands are refused; power-cycle and reconnect
+(see the power-on order in [docs/protocol.md](docs/protocol.md)) to perform a
+cold bring-up. Expert users can explicitly set `allow_unverified_firmware=True`,
+which also accepts an already-active session, accepting that protocol and safety
+behavior may differ. Emergency disable remains available without a version match.
+
+`Controller.send_raw()` applies the same policy to force-producing message
+types (`0x0013` resistance profile, `0x1028` resistance toggle, and `0x0003`):
+they require `allow_motor_commands=True`, and raw resistance profiles are checked
+against the same resistance bounds and firmware check as `configure_resistance()`.
 
 Observed device interface:
 

@@ -49,9 +49,12 @@ class SafetyPolicy:
     compatible_firmware_versions: frozenset[str] = frozenset({"5.2.18.0"})
     allow_unverified_firmware: bool = False
 
-    def validate_resistance(self, pounds: float) -> None:
+    def require_motor_commands(self) -> None:
         if not self.allow_motor_commands:
             raise SafetyError("motor commands are disabled by SafetyPolicy")
+
+    def validate_resistance(self, pounds: float) -> None:
+        self.require_motor_commands()
         if not math.isfinite(pounds):
             raise SafetyError("resistance must be finite")
         if not self.minimum_resistance_lb <= pounds <= self.maximum_resistance_lb:
@@ -59,6 +62,14 @@ class SafetyPolicy:
                 f"resistance {pounds} lb is outside "
                 f"[{self.minimum_resistance_lb}, {self.maximum_resistance_lb}]"
             )
+
+
+# Message types that can produce force or change motor state. ``send_raw``
+# applies the same SafetyPolicy checks to these as the typed methods do.
+# 0x0003 has no typed API; see docs/protocol.md before sending it.
+_MOTOR_MESSAGE_TYPES = frozenset(
+    {MessageType.RESISTANCE_PROFILE, MessageType.RESISTANCE_TOGGLE, 0x0003}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,7 +222,43 @@ class Controller:
         """Send an arbitrary protocol frame.
 
         This is an expert API. It does not imply the payload is safe or known.
+        Force-producing message types are subject to the same ``SafetyPolicy``
+        checks as the typed methods: resistance profiles are bounds-checked,
+        and every motor message requires ``allow_motor_commands``.
         """
+        if self._transport is None:
+            raise ControllerError("controller is not open")
+        profile = self._check_raw_command(message_type, payload)
+        frame = self._send(message_type, payload, destination=destination)
+        if profile is not None:
+            self.configured_profile = profile
+        elif message_type == MessageType.RESISTANCE_TOGGLE:
+            state = int.from_bytes(payload[:2], "little")
+            if state in (ResistanceState.ENABLED, ResistanceState.DISABLED):
+                self.resistance_state = ResistanceState(state)
+        return frame
+
+    def _check_raw_command(self, message_type: int, payload: bytes) -> ResistanceProfile | None:
+        if message_type not in _MOTOR_MESSAGE_TYPES:
+            return None
+        self.safety.require_motor_commands()
+        if message_type == MessageType.RESISTANCE_PROFILE:
+            try:
+                profile = ResistanceProfile.decode(payload)
+            except ValueError as exc:
+                raise SafetyError(f"malformed resistance profile: {exc}") from exc
+            self._check_profile(profile)
+            return profile
+        if message_type == MessageType.RESISTANCE_TOGGLE:
+            if len(payload) != 4:
+                raise SafetyError("resistance toggle must be 4 bytes")
+            if int.from_bytes(payload[:2], "little") != ResistanceState.DISABLED:
+                self._check_enable()
+            return None
+        self.require_compatible_firmware()
+        return None
+
+    def _send(self, message_type: int, payload: bytes = b"", *, destination: int = 1) -> Frame:
         transport = self._transport
         if transport is None:
             raise ControllerError("controller is not open")
@@ -299,33 +346,40 @@ class Controller:
             raise BringUpError("bring-up did not reach motor telemetry") from exc
 
     def configure_resistance(self, profile: ResistanceProfile) -> Frame:
-        pounds = profile.base_tenths_lb / 10.0
-        peak_pounds = profile.peak_tenths_lb / 10.0
-        self.safety.validate_resistance(pounds)
-        self.safety.validate_resistance(peak_pounds)
-        self.require_compatible_firmware()
-        frame = self.send_raw(MessageType.RESISTANCE_PROFILE, profile.encode(), destination=1)
+        self._check_profile(profile)
+        frame = self._send(MessageType.RESISTANCE_PROFILE, profile.encode(), destination=1)
         self.configured_profile = profile
         return frame
 
-    def enter_active(self) -> Frame:
-        """Expert-only active transition; unsafe on an already-active device.
-
-        This command is intentionally never called by automatic bring-up.
-        """
-        if not self.safety.allow_motor_commands:
-            raise SafetyError("motor commands are disabled by SafetyPolicy")
+    def _check_profile(self, profile: ResistanceProfile) -> None:
+        self.safety.validate_resistance(profile.base_tenths_lb / 10.0)
+        self.safety.validate_resistance(profile.peak_tenths_lb / 10.0)
         self.require_compatible_firmware()
-        return self.send_raw(MessageType.ENTER_ACTIVE, destination=1)
+
+    def _check_enable(self) -> None:
+        self.safety.require_motor_commands()
+        if self.configured_profile is None:
+            raise SafetyError("configure resistance before enabling it")
+        self.require_compatible_firmware()
 
     def require_compatible_firmware(self) -> str:
-        """Fail closed unless the announcement reports a tested firmware."""
+        """Fail closed unless the announcement reports a tested firmware.
+
+        An already-active session (telemetry streaming at connect time) never
+        shows the version announcement, so it is treated as unverified firmware.
+        """
         announcement = self.last_announcement
         version = announcement.firmware_version if announcement is not None else None
-        if version is None and self._accepted_active_session and self.telemetry is not None:
-            return "already-active"
         if self.safety.allow_unverified_firmware:
+            if version is None and self._accepted_active_session:
+                return "already-active"
             return version or "unknown"
+        if version is None and self._accepted_active_session:
+            raise SafetyError(
+                "motor-controller firmware is unknown: telemetry was already streaming, "
+                "so the version announcement was missed; perform a cold bring-up or "
+                "explicitly allow unverified firmware"
+            )
         if version is None:
             raise SafetyError(
                 "motor-controller firmware is unknown; wait for a device announcement "
@@ -342,12 +396,8 @@ class Controller:
         return self.configure_resistance(ResistanceProfile.basic(pounds))
 
     def enable_resistance(self, *, mode: int = 2) -> Frame:
-        if not self.safety.allow_motor_commands:
-            raise SafetyError("motor commands are disabled by SafetyPolicy")
-        if self.configured_profile is None:
-            raise SafetyError("configure resistance before enabling it")
-        self.require_compatible_firmware()
-        frame = self.send_raw(
+        self._check_enable()
+        frame = self._send(
             MessageType.RESISTANCE_TOGGLE,
             encode_resistance_toggle(ResistanceState.ENABLED, mode),
             destination=1,
@@ -356,9 +406,8 @@ class Controller:
         return frame
 
     def disable_resistance(self, *, mode: int = 2) -> Frame:
-        if not self.safety.allow_motor_commands:
-            raise SafetyError("motor commands are disabled by SafetyPolicy")
-        frame = self.send_raw(
+        self.safety.require_motor_commands()
+        frame = self._send(
             MessageType.RESISTANCE_TOGGLE,
             encode_resistance_toggle(ResistanceState.DISABLED, mode),
             destination=1,
